@@ -4,6 +4,7 @@ import Transaction from "./transaction.js"
 const sha256 = require("sha256");
 const hash_need = "0000" // used to increase the difficulty
 
+const currentNodeUrl = process.argv[3];
 export default class Blockchain
 {
     constructor()
@@ -11,6 +12,7 @@ export default class Blockchain
         this.chain = [];
         this.pendingTransactions = [];
         
+        this.networkNodes = [];
         this.createNewBlock(0, '0', '0');
     }
 
@@ -21,7 +23,7 @@ export default class Blockchain
                 nonce: nonce, 
                 hash: hash,
                 prevBlockHash: prevBlockHash,
-                timestamp: Date.now() }, true);
+                timestamp: Date.now() }, false);
         
         this.clearPendingTransactions();
         this.chain.push(block);
@@ -51,7 +53,7 @@ export default class Blockchain
         let nonce = 0;
         let hash = this.hashBlock(prevBlockHash, currentBlockData, nonce);
 
-        console.log(`Mining a new block...`);
+        console.log(`Mining a new block... (${this.pendingTransactions.length} pending transactions)`);
         while (hash.substring(0, hash_need.length) !== hash_need) {
             nonce++;
             hash = this.hashBlock(prevBlockHash, currentBlockData, nonce);
@@ -66,7 +68,7 @@ export default class Blockchain
             sender: sender, 
             recipient: recipient,
             timestamp: Date.now()
-        }, true);
+        }, false);
 
         this.pendingTransactions.push(transaction);
 
