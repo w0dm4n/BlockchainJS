@@ -30,6 +30,12 @@ export default class Blockchain
         return block;
     }
 
+    addNewNode(nodeUrl) {
+        if (this.networkNodes.indexOf(nodeUrl) == -1) {
+            this.networkNodes.push(nodeUrl);
+        }
+    }
+
     getNewBlockIndex() {
         return this.chain.length + 1;
     }

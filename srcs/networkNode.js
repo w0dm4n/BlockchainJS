@@ -3,10 +3,11 @@ import Blockchain from "./blockchain.js"
 const express = require("express");
 const bodyParser = require('body-parser');
 const uuid = require("uuid/v1");
-const rp = require("request_promise");
+const rp = require("request-promise");
 
 const listenPort = process.argv[2];
 const nodeAddress = uuid().split("-").join("");
+const currentNodeUrl = process.argv[3];
 
 export default class NetworkNode
 {
@@ -20,10 +21,12 @@ export default class NetworkNode
         this.setRoutes();
     }
 
-    broadcastNodes(newNodeUrl)
+    broadcastToNodes(newNodeUrl)
     {
         for (var node of this.blockchain.networkNodes) {
-            
+            if (this.blockchain.networkNodes !== currentNodeUrl) {
+
+            }
         }
     }
 
@@ -62,10 +65,12 @@ export default class NetworkNode
            if (request.body.newNodeUrl) {
                let newNodeUrl = request.body.newNodeUrl;
 
-                if (this.blockchain.networkNodes.indexOf(newNodeUrl) == -1) {
-                    this.blockchain.networkNodes.push(newNodeUrl); // check if node url is valid by a ping pong request ?
-                }
-                this.broadcastNode(newNodeUrl);
+                /*
+                ** check if node url is valid by a ping pong request ?
+                ** can be fake spoof nodes to ddos or down the blockchain
+                */
+                this.blockchain.addNewNode(newNodeUrl);
+                this.broadcastToNodes(newNodeUrl);
            } 
         });
 
@@ -89,4 +94,3 @@ export default class NetworkNode
         }).on('error', (e) => { console.log(`An error occured while trying to start the network node ${e}`); });
     }
 }
-
