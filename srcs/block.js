@@ -10,7 +10,7 @@ export default class Block
 
         this.timestamp = raw.timestamp; // Date block created
         if (debug) {
-            console.log(`New block ${this.id} with ${this.transactions.length} transactions waiting (${this.timestamp})`);
+            console.log(`(${this.id} : ${this.hash}) New block with ${this.transactions.length} transactions waiting (${this.timestamp})`);
         }
     }
 };

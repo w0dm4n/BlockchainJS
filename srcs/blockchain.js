@@ -37,10 +37,7 @@ export default class Blockchain
     }
 
     getLastBlock() {
-        if (this.chain.length > 0) {
-            return this.chain[this.chain.length - 1];
-        }
-        return null;
+        return this.chain[this.chain.length - 1];
     }
 
     hashBlock(prevBlockHash, currentBlockData, nonce) {
@@ -53,6 +50,8 @@ export default class Blockchain
     proofOfWork(prevBlockHash, currentBlockData) {
         let nonce = 0;
         let hash = this.hashBlock(prevBlockHash, currentBlockData, nonce);
+
+        console.log(`Mining a new block...`);
         while (hash.substring(0, hash_need.length) !== hash_need) {
             nonce++;
             hash = this.hashBlock(prevBlockHash, currentBlockData, nonce);
