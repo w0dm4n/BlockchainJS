@@ -2,6 +2,7 @@ import Block from "./block.js"
 import Transaction from "./transaction.js"
 
 const sha256 = require("sha256");
+const uuid = require("uuid/v1");
 const hash_need = "0000" // used to increase the difficulty
 
 const currentNodeUrl = process.argv[3];
@@ -14,6 +15,7 @@ export default class Blockchain
         
         this.networkNodes = [];
         this.createNewBlock(0, '0', '0');
+        this.addNewNode(currentNodeUrl);
     }
 
     createNewBlock(nonce, prevBlockHash, hash) {
@@ -30,18 +32,40 @@ export default class Blockchain
         return block;
     }
 
+    addNewBlock(fromRaw) {
+        let block = new Block(fromRaw);
+
+        block.transactions = this.pendingTransactions;
+        this.clearPendingTransactions();
+        this.chain.push(block);
+        return block;
+    }
+
     addNewNode(nodeUrl) {
         if (this.networkNodes.indexOf(nodeUrl) == -1) {
             this.networkNodes.push(nodeUrl);
         }
     }
 
+    setBulkNodes(nodes) {
+        this.networkNodes = nodes;
+    }
+
+    removeNode(nodeUrl) {
+        let index = this.networkNodes.indexOf(nodeUrl);
+        if (index) {
+            this.networkNodes.splice(index, 1);
+            console.log(`Node ${nodeUrl} disconnected !`);
+        }
+    }
+
     getNewBlockIndex() {
-        return this.chain.length + 1;
+        let block = this.getLastBlock();
+        return (block) ? (block.id + 1) : 1;
     }
 
     getNewTransactionIndex() {
-        return this.pendingTransactions.length + 1;
+        return uuid().split('-').join('');
     }
 
     getLastBlock() {
@@ -59,12 +83,20 @@ export default class Blockchain
         let nonce = 0;
         let hash = this.hashBlock(prevBlockHash, currentBlockData, nonce);
 
+        // find a way to handle the max % of cpu fucked by the mining process
         console.log(`Mining a new block... (${this.pendingTransactions.length} pending transactions)`);
         while (hash.substring(0, hash_need.length) !== hash_need) {
             nonce++;
             hash = this.hashBlock(prevBlockHash, currentBlockData, nonce);
         }
         return nonce;
+    }
+
+    addToPendingTransactions(transaction) {
+        this.pendingTransactions.push(transaction);
+
+        console.log(`Transaction ${transaction.id} will be added in block ${this.getNewBlockIndex()}`);
+        return this.getNewBlockIndex();
     }
 
     createNewTransaction(amount, sender, recipient){
@@ -76,9 +108,7 @@ export default class Blockchain
             timestamp: Date.now()
         }, false);
 
-        this.pendingTransactions.push(transaction);
-
-        return this.getNewBlockIndex();
+        return transaction;
     }
 
     clearPendingTransactions() {
