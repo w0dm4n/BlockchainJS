@@ -124,7 +124,7 @@ export default class NetworkNode
             let prevBlock = this.blockchain.getLastBlock();
             let datas = {
                 transactions: this.blockchain.pendingTransactions,
-                index: prevBlock.index + 1
+                index: prevBlock.id + 1
             }
 
             let nonce = this.blockchain.proofOfWork(prevBlock.hash, datas);
@@ -209,13 +209,18 @@ export default class NetworkNode
                     let lastBlock = this.blockchain.getLastBlock();
                     let correctLastHash = lastBlock.hash === block.prevBlockHash;
                     let correctIndex = block.id == this.blockchain.getNewBlockIndex();
-                    // check block validity
                     
                     if (correctLastHash && correctIndex) {
                         result.json({alive: true, note: "New block accepted", block: block});
                         this.blockchain.addNewBlock(block);
+
+                        if (!this.blockchain.isValidChain(this.blockchain.chain)) {
+                            // reset blockchain
+                            console.log(`Something went wrong with my blockchain :(`);
+                        }
+
                     } else {
-                        result.json({alive: true, note: "New block refused"});
+                        result.json({alive: true, note: "New block refused", block: block});
                     }
                 } else {
                     console.log(block);

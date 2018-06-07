@@ -114,4 +114,25 @@ export default class Blockchain
     clearPendingTransactions() {
         this.pendingTransactions = [];
     }
+
+    isValidChain(chain)
+    {
+        let validChain = true;
+        for (var i = 1; i < chain.length; i++) {
+            let curBlock = chain[i];
+            let prevBlock = chain[i - 1];
+            let hash = this.hashBlock(curBlock.prevBlockHash, {transactions: curBlock.transactions, index: curBlock.id}, curBlock.nonce);
+
+            if (curBlock.prevBlockHash != prevBlock.hash 
+                || hash.substring(0, hash_need.length) !== hash_need) {
+                validChain = false;
+            }
+        }
+        let genesis = chain[0]; // not sure if thats really usefull
+        if (genesis.nonce != 0 || genesis.hash !== '0' || genesis.prevBlockHash !== '0'
+            || genesis.transactions.length > 0) {
+            validChain = false;
+        }
+        return validChain;
+    }
 };
