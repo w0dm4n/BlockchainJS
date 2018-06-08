@@ -3,31 +3,53 @@ import Transaction from "./transaction.js"
 
 const sha256 = require("sha256");
 const uuid = require("uuid/v1");
-const hash_need = "0000" // used to increase the difficulty
 
 const currentNodeUrl = process.argv[3];
 export default class Blockchain
 {
     constructor()
     {
+        this.hash_need = "000000" // used to increase the difficulty
         this.chain = [];
         this.pendingTransactions = [];
         
         this.networkNodes = [];
-        this.createNewBlock(0, '0', '0');
+        this.createNewBlock(0, '0', '0', []);
         this.addNewNode(currentNodeUrl);
     }
 
-    createNewBlock(nonce, prevBlockHash, hash) {
+    findPendingTransaction(id)
+    {
+        let i = 0;
+        for (var transaction of this.pendingTransactions) {
+            if (transaction.id == id) {
+                return i;
+            }
+            i++;
+        }
+        return -1;
+    }
+
+    clearInBlockTransaction(block) {
+        for (var transaction of block.transactions) {
+            let index = this.findPendingTransaction(transaction.id);
+            if (index != -1) {
+                this.pendingTransactions.splice(index, 1);
+                //console.log(`Transaction ${transaction.id} verified by block ${block.id}`);
+            }
+        }
+    }
+
+    createNewBlock(nonce, prevBlockHash, hash, transactions) {
         let block = new Block({
                 id: this.getNewBlockIndex(), 
-                transactions: this.pendingTransactions, 
-                nonce: nonce, 
+                transactions: transactions, 
+                nonce: nonce,
                 hash: hash,
                 prevBlockHash: prevBlockHash,
                 timestamp: Date.now() }, false);
         
-        this.clearPendingTransactions();
+        this.clearInBlockTransaction(block);
         this.chain.push(block);
         return block;
     }
@@ -35,8 +57,7 @@ export default class Blockchain
     addNewBlock(fromRaw) {
         let block = new Block(fromRaw);
 
-        block.transactions = this.pendingTransactions;
-        this.clearPendingTransactions();
+        this.clearInBlockTransaction(block);
         this.chain.push(block);
         return block;
     }
@@ -85,7 +106,7 @@ export default class Blockchain
 
         // find a way to handle the max % of cpu fucked by the mining process
         console.log(`Mining a new block... (${this.pendingTransactions.length} pending transactions)`);
-        while (hash.substring(0, hash_need.length) !== hash_need) {
+        while (hash.substring(0, this.hash_need.length) !== this.hash_need) {
             nonce++;
             hash = this.hashBlock(prevBlockHash, currentBlockData, nonce);
         }
@@ -124,7 +145,7 @@ export default class Blockchain
             let hash = this.hashBlock(curBlock.prevBlockHash, {transactions: curBlock.transactions, index: curBlock.id}, curBlock.nonce);
 
             if (curBlock.prevBlockHash != prevBlock.hash 
-                || hash.substring(0, hash_need.length) !== hash_need) {
+                || hash.substring(0, this.hash_need.length) !== this.hash_need) {
                 validChain = false;
             }
         }

@@ -5,6 +5,7 @@ const express = require("express");
 const bodyParser = require('body-parser');
 const uuid = require("uuid/v1");
 const rp = require("request-promise");
+const { spawn }= require('child_process');
 
 const listenPort = process.argv[2];
 const nodeAddress = uuid().split("-").join("");
@@ -104,6 +105,41 @@ export default class NetworkNode
         }
     }
 
+    getNodesBlockchain(callback)
+    {
+        let i = 0;
+        let nodesCount = this.blockchain.networkNodes.length - 1;
+        let chains = [];
+
+
+        if (nodesCount <= 0) {
+            callback([]);
+            return;
+        }
+        for (var node of this.blockchain.networkNodes) 
+        {
+            if (node != currentNodeUrl) {
+                rp({
+                    method: "GET",
+                    uri: `${node}/blockchain`,
+                    json: true,
+                    timeout: 1500
+                }).then((blockchain) => {
+                    if (blockchain) {
+                        chains.push(blockchain);
+                    }
+                    i++;
+                    if (i == nodesCount)
+                        callback(chains);
+                }).catch(() => {
+                    i++;
+                    if (i == nodesCount)
+                        callback(chains);
+                });
+            }
+        }
+    }
+
     setRoutes()
     {
         this.app.get("/blockchain", (request, result) => {
@@ -122,31 +158,46 @@ export default class NetworkNode
         
         this.app.get("/mine", (request, result) => {
             let prevBlock = this.blockchain.getLastBlock();
+            let transactions = [...this.blockchain.pendingTransactions];
             let datas = {
-                transactions: this.blockchain.pendingTransactions,
+                transactions: transactions,
                 index: prevBlock.id + 1
             }
 
-            let nonce = this.blockchain.proofOfWork(prevBlock.hash, datas);
-            let newBlockHash = this.blockchain.hashBlock(prevBlock.hash, datas, nonce);
+            let powResult = '';
 
-            let newBlock = this.blockchain.createNewBlock(nonce, prevBlock.hash, newBlockHash);
-            this.broadcastBlock(newBlock, () => {
-
-                console.log("I mined a block and broadcasted it, now i have won a reward, awesome !");
-                rp({
-                    method: "POST",
-                    uri: `${currentNodeUrl}/transaction/broadcast`,
-                    body: {
-                        amount: 0.5,
-                        sender: "00",
-                        recipient: nodeAddress
-                    },
-                    json: true,
-                    timeout: 1500
-                }).then(() => { result.json({note: `New block successfully mined && broadcasted`, block: newBlock}); }).catch(() => {});
+            let child = spawn('node', ['srcs/pow.js', prevBlock.hash, JSON.stringify(datas), this.blockchain.hash_need]);
+            child.stdout.on('data', (data) => {
+                powResult += data;
             });
 
+            child.on('exit',  (code, signal) => {
+                let nonce = Number(powResult);
+                let newBlockHash = this.blockchain.hashBlock(prevBlock.hash, datas, nonce);
+
+                let lastBlock = this.blockchain.getLastBlock();
+
+                if (prevBlock.hash != lastBlock.hash) {
+                    console.log('I mined one block but it was already mined by another bastard ! No reward this time :(');
+                    return;
+                }
+                let newBlock = this.blockchain.createNewBlock(nonce, prevBlock.hash, newBlockHash, transactions);
+                this.broadcastBlock(newBlock, () => {
+
+                    console.log("I mined a block and broadcasted it, now i have won a reward, awesome !");
+                    rp({
+                        method: "POST",
+                        uri: `${currentNodeUrl}/transaction/broadcast`,
+                        body: {
+                            amount: 0.5,
+                            sender: "00",
+                            recipient: nodeAddress
+                        },
+                        json: true,
+                        timeout: 1500
+                    }).then(() => { result.json({note: `New block successfully mined && broadcasted`, block: newBlock}); }).catch(() => {});
+                });    
+            });
         });
 
         // register one new node and send it to other nodes already known
@@ -215,7 +266,14 @@ export default class NetworkNode
                         this.blockchain.addNewBlock(block);
 
                         if (!this.blockchain.isValidChain(this.blockchain.chain)) {
-                            // reset blockchain
+                            rp({
+                                method: "POST",
+                                uri: `${currentNodeUrl}/consensus`,
+                                body: { nodes: this.blockchain.networkNodes },
+                                json: true,
+                                timeout: 1500
+                            }).then(() => {}).catch(() => {});
+
                             console.log(`Something went wrong with my blockchain :(`);
                         }
 
@@ -225,6 +283,32 @@ export default class NetworkNode
                 } else {
                     console.log(block);
                 }
+        });
+
+        //longuest chain rule 
+        this.app.get('/consensus', (request, result) => {
+            this.getNodesBlockchain((blockchains) => {
+                if (blockchains.length > 0) {
+                    let maxLen = this.blockchain.chain.length;
+                    let newChain = null;
+                    for (var blockchain of blockchains) {
+                        if (blockchain.chain && blockchain.chain.length > maxLen) {
+                            maxLen = blockchain.chain.length;
+                            newChain = blockchain;
+                        }
+                    }
+
+                    if (newChain && this.blockchain.isValidChain(newChain.chain)) {
+                        // if chain not sync all 'legit' transactions sent to it are lost ?
+                        this.blockchain.pendingTransactions = newChain.pendingTransactions;
+                        this.blockchain.chain = newChain.chain;
+
+                        result.json({alive: true, note: 'Current chain updated to a new larger one', chain: newChain});
+                    } else {
+                        result.json({alive: true, note: 'Current chain seems to be valid and up to date', chain: this.blockchain.chain});
+                    }
+                } else result.json({alive: true, note: 'Current chain seems to be valid and up to date', chain: this.blockchain.chain});
+            })
         });
     }
     
