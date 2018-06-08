@@ -20,6 +20,21 @@ export default class NetworkNode
         this.app.use(bodyParser.urlencoded({extended: true}));
         this.app.use(bodyParser.json());
 
+        this.app.use(function(req, res, next) {
+            var err = null;
+            try {
+                decodeURIComponent(req.path)
+            }
+            catch (e) {
+                err = e;
+            }
+
+            if (err) {
+                return res.status(400).end("Bad request. Aren't you trying to hijack our little blockchain ? Mh ?");
+            }
+            next();
+        });
+
         this.setRoutes();
     }
 
@@ -150,9 +165,14 @@ export default class NetworkNode
             let body = request.body;
             if (body && body.id && body.amount && body.sender && body.recipient) {
                 let transaction = new Transaction(body);
-                this.blockchain.addToPendingTransactions(transaction);
 
-                result.json({alive: true, note: `Transaction will be added in block ${this.blockchain.getNewBlockIndex()}`});
+                let valid = this.blockchain.addToPendingTransactions(transaction);
+                if (valid) {
+                    result.json({alive: true, note: `Transaction will be added in block ${this.blockchain.getNewBlockIndex()}`});
+                } else {
+                    let datas = this.blockchain.getAddressData(newTransaction.sender);
+                    result.json({note: `Transaction rejected due to insufficient amount from ${newTransaction.sender}, need ${newTransaction.amount} and have ${datas.balance}`, alive: true, newTransaction});
+                }
             }
         });
         
@@ -189,7 +209,7 @@ export default class NetworkNode
                         method: "POST",
                         uri: `${currentNodeUrl}/transaction/broadcast`,
                         body: {
-                            amount: 0.5,
+                            amount: this.blockchain.miningReward,
                             sender: "00",
                             recipient: nodeAddress
                         },
@@ -247,9 +267,14 @@ export default class NetworkNode
             let body = request.body;
             if (body && body.amount && body.sender && body.recipient) {
                 let newTransaction = this.blockchain.createNewTransaction(Number(body.amount), body.sender, body.recipient);
-                result.json({note: `Transaction created and broadcasted`, alive: true, newTransaction});
-                this.blockchain.addToPendingTransactions(newTransaction);
-                this.broadcastTransaction(newTransaction);
+                let valid = this.blockchain.addToPendingTransactions(newTransaction);
+                if (valid) {
+                    this.broadcastTransaction(newTransaction);
+                    result.json({note: `Transaction created and broadcasted`, alive: true, newTransaction});
+                } else {
+                    let datas = this.blockchain.getAddressData(newTransaction.sender);
+                    result.json({note: `Transaction rejected due to insufficient amount from ${newTransaction.sender}, need ${newTransaction.amount} and have ${datas.balance.toFixed(6)}`, alive: true, newTransaction});
+                }
             }
         });
 
@@ -309,6 +334,13 @@ export default class NetworkNode
                     }
                 } else result.json({alive: true, note: 'Current chain seems to be valid and up to date', chain: this.blockchain.chain});
             })
+        });
+
+        this.app.get('/address/:id', (request, result) => {
+            if (request.params.id) {
+                let datas = this.blockchain.getAddressData(request.params.id);
+                result.json({address:datas});
+            }
         });
     }
     

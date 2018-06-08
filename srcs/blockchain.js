@@ -13,6 +13,7 @@ export default class Blockchain
         this.chain = [];
         this.pendingTransactions = [];
         
+        this.miningReward = 0.5;
         this.networkNodes = [];
         this.createNewBlock(0, '0', '0', []);
         this.addNewNode(currentNodeUrl);
@@ -104,20 +105,24 @@ export default class Blockchain
         let nonce = 0;
         let hash = this.hashBlock(prevBlockHash, currentBlockData, nonce);
 
-        // find a way to handle the max % of cpu fucked by the mining process
+        // find a way to handle the powerness of cpu fucked by the mining process
         console.log(`Mining a new block... (${this.pendingTransactions.length} pending transactions)`);
         while (hash.substring(0, this.hash_need.length) !== this.hash_need) {
             nonce++;
             hash = this.hashBlock(prevBlockHash, currentBlockData, nonce);
+            // sleep by microsec / cpu tick
         }
         return nonce;
     }
 
     addToPendingTransactions(transaction) {
-        this.pendingTransactions.push(transaction);
+        let datas = this.getAddressData(transaction.sender);
 
-        console.log(`Transaction ${transaction.id} will be added in block ${this.getNewBlockIndex()}`);
-        return this.getNewBlockIndex();
+        if (datas.balance >= transaction.amount) {
+            this.pendingTransactions.push(transaction);
+            return true;
+        }
+        return false
     }
 
     createNewTransaction(amount, sender, recipient){
@@ -155,5 +160,21 @@ export default class Blockchain
             validChain = false;
         }
         return validChain;
+    }
+
+    getAddressData(address) {
+        let results = {received: [], sent: [], balance: 0.00};
+
+        for (var block of this.chain) {
+            for (var transaction of block.transactions)
+            {
+                if (transaction.sender === address) { results.sent.push(transaction); results.balance -= transaction.amount; }
+                if (transaction.recipient === address) { results.recipient.push(transaction); results.balance += transaction.amount; }
+            }
+        }
+        if (address === "00")  { // base address
+            results.balance = this.miningReward;
+        }
+        return results;
     }
 };
