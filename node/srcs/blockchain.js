@@ -1,5 +1,6 @@
 import Block from "./block.js"
 import Transaction from "./transaction.js"
+import Utils from "./utils.js"
 
 const sha256 = require("sha256");
 const uuid = require("uuid/v1");
@@ -116,7 +117,6 @@ export default class Blockchain
         let index = this.networkNodes.indexOf(nodeUrl);
         if (index) {
             this.networkNodes.splice(index, 1);
-            console.log(`Node ${nodeUrl} disconnected !`);
         }
     }
 
@@ -162,13 +162,14 @@ export default class Blockchain
         return ((addr.length == this.generateNewWallet().public_key.length) == true && (addr.match("^[a-zA-Z0-9]*$")) != null);
     }
 
-    createNewTransaction(amount, sender, recipient){
+    createNewTransaction(hash, amount, sender, recipient, signature, initiated){
         let transaction = new Transaction({
-            id: this.getNewTransactionIndex(),
+            id: hash,
             amount: amount,
             sender: sender, 
             recipient: recipient,
-            timestamp: Date.now()
+            timestamp: initiated,
+            signature: signature,
         }, false);
 
         return transaction;
@@ -196,11 +197,33 @@ export default class Blockchain
             || genesis.transactions.length > 0) {
             validChain = false;
         }
+
+        var EC = require('elliptic').ec;
+        var ec = new EC('secp256k1');
+        for (var block of chain) {
+            for (var transaction of block.transactions)
+            {
+                let key = ec.keyFromPublic(transaction.sender, "hex");
+                let signature = Utils.convertHexStringToNumArray(transaction.signature);
+                
+                let t = {
+                    amount: transaction.amount,
+                    recipient: transaction.recipient,
+                    sender: transaction.sender,
+                    initiated: transaction.timestamp
+                }
+                
+                let txHash = sha256(JSON.stringify(t));
+                if (!key.verify(txHash, signature)) {
+                    return false;
+                }
+            }
+        }
         return validChain;
     }
 
     getAddressData(address) {
-        let results = {received: [], sent: [], balance: 100.00};
+        let results = {received: [], sent: [], balance: 0.00};
 
         for (var block of this.chain) {
             for (var transaction of block.transactions)

@@ -1,5 +1,6 @@
 import Blockchain from "./blockchain.js"
 import Transaction from "./transaction.js"
+import Utils from "./utils.js"
 
 const express = require("express");
 const bodyParser = require('body-parser');
@@ -10,6 +11,7 @@ const elliptic = require("elliptic");
 const random_string = require("randomstring");
 const eccrypto = require("eccrypto");
 const fs = require("fs");
+const sha256 = require("sha256");
 
 const listenPort = process.argv[2];
 const currentNodeUrl = process.argv[3];
@@ -183,11 +185,12 @@ export default class NetworkNode
                 let t = {
                     amount: body.amount,
                     recipient: body.recipient,
-                    sender: body.sender
+                    sender: body.sender,
+                    initiated: body.initiated
                 }
                 let key = ec.keyFromPublic(body.sender, "hex");
-                let raw = Buffer.from(JSON.stringify(t));
-                if (key.verify(raw, body.signature)) { // address authentified
+                let hash = sha256(JSON.stringify(t));
+                if (key.verify(hash, body.signature)) { // address authentified
                     let datas = this.blockchain.getAddressData(body.sender);
                     
                     if (datas.balance >= body.amount) {
@@ -299,7 +302,7 @@ export default class NetworkNode
         // send a transaction to other nodes
         this.app.post('/transaction/broadcast', (request, result) => {
             let body = request.body;
-            if (body && body.amount && body.recipient && body.sender && body.signature) {
+            if (body && body.amount && body.recipient && body.sender && body.signature && body.initiated) {
 
                 if (!this.blockchain.validAddress(body.sender)) { // && recipient
                     return;
@@ -310,15 +313,16 @@ export default class NetworkNode
                 let t = {
                     amount: body.amount,
                     recipient: body.recipient,
-                    sender: body.sender
+                    sender: body.sender,
+                    initiated: body.initiated
                 }
+                let hash = sha256(JSON.stringify(t));
                 let key = ec.keyFromPublic(body.sender, "hex");
-                let raw = Buffer.from(JSON.stringify(t));
-                if (key.verify(raw, body.signature)) { // address authentified
+                if (key.verify(hash, body.signature)) { // address authentified
                     let datas = this.blockchain.getAddressData(body.sender);
                     
                     if (datas.balance >= body.amount) {
-                        let newTransaction = this.blockchain.createNewTransaction(Number(body.amount), body.sender, body.recipient);
+                        let newTransaction = this.blockchain.createNewTransaction(hash, body.amount, body.sender, body.recipient, Utils.convertNumArrayToHexString(body.signature), body.initiated);
                         this.blockchain.addToPendingTransactions(newTransaction);
                         
                         result.json({note: `Transaction accepted and broadcasted`, alive: true, newTransaction});

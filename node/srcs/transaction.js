@@ -6,6 +6,7 @@ export default class Transaction
         this.amount = raw.amount;
         this.sender = raw.sender;
         this.recipient = raw.recipient;
+        this.signature = raw.signature;
 
         this.timestamp = raw.timestamp // Date transaction created
         if (debug) {
