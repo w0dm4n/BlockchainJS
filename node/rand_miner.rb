@@ -4,7 +4,7 @@ while 1 do
     amount = rand(0.1..2.5)
 
     Thread.new {
-        system(`curl --header "Content-Type: application/json" --request POST --data '{"id": "#{fundsaresafe}", "timestamp": "0", "amount":"#{amount}", "sender":"Binance","recipient":"Peoples"}' http://localhost:3000/transaction/broadcast`);
+        system('echo `sh "/Users/frmarinh/Desktop/BlockchainJS/transactionBuilder/lol.sh"`');
     }
 
     Thread.new {

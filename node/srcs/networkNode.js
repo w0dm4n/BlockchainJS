@@ -5,10 +5,13 @@ const express = require("express");
 const bodyParser = require('body-parser');
 const uuid = require("uuid/v1");
 const rp = require("request-promise");
-const { spawn }= require('child_process');
+const { spawn } = require('child_process');
+const elliptic = require("elliptic");
+const random_string = require("randomstring");
+const eccrypto = require("eccrypto");
+const fs = require("fs");
 
 const listenPort = process.argv[2];
-const nodeAddress = uuid().split("-").join("");
 const currentNodeUrl = process.argv[3];
 
 export default class NetworkNode
@@ -162,16 +165,42 @@ export default class NetworkNode
         });
         
         this.app.post("/transaction", (request, result) => {
-            let body = request.body;
-            if (body && body.id && body.amount && body.sender && body.recipient) {
-                let transaction = new Transaction(body);
+            let body = request.body.base;
+            let object = request.body.transactionObject;
+            if (body && body.amount && body.recipient && body.sender && body.signature && object) {
 
-                let valid = this.blockchain.addToPendingTransactions(transaction);
-                if (valid) {
-                    result.json({alive: true, note: `Transaction will be added in block ${this.blockchain.getNewBlockIndex()}`});
+                if (!this.blockchain.validAddress(body.sender)) { // && recipient
+                    return;
+                }
+                var EC = require('elliptic').ec;
+                var ec = new EC('secp256k1');
+
+
+                if (body.amount != object.amount || body.recipient !== object.recipient && body.sender !== object.sender) {
+                    return;
+                }
+
+                let t = {
+                    amount: body.amount,
+                    recipient: body.recipient,
+                    sender: body.sender
+                }
+                let key = ec.keyFromPublic(body.sender, "hex");
+                let raw = Buffer.from(JSON.stringify(t));
+                if (key.verify(raw, body.signature)) { // address authentified
+                    let datas = this.blockchain.getAddressData(body.sender);
+                    
+                    if (datas.balance >= body.amount) {
+                        let newTransaction = new Transaction(object);
+                        this.blockchain.addToPendingTransactions(newTransaction);
+
+                        result.json({note: `Transaction accepted`, alive: true, newTransaction});
+                    } else {
+                        result.json({note: `Transaction rejected due to insufficient amount from ${body.sender}, need ${body.amount} and have ${datas.balance.toFixed(6)}`, alive: true, t});
+                    }
                 } else {
-                    let datas = this.blockchain.getAddressData(newTransaction.sender);
-                    result.json({note: `Transaction rejected due to insufficient amount from ${newTransaction.sender}, need ${newTransaction.amount} and have ${datas.balance}`, alive: true, newTransaction});
+                    console.log(`Invalid transaction... you are not ${body.sender}`);
+                    result.json({node: `Invalid transaction... you are not ${body.sender}`});
                 }
             }
         });
@@ -184,8 +213,11 @@ export default class NetworkNode
                 index: prevBlock.id + 1
             }
 
-            let powResult = '';
+            if (transactions.length == 0) {
+                result.json({note: `No transaction to mine !`}); 
+            }
 
+            let powResult = '';
             let child = spawn('node', ['srcs/pow.js', prevBlock.hash, JSON.stringify(datas), this.blockchain.hash_need]);
             child.stdout.on('data', (data) => {
                 powResult += data;
@@ -204,18 +236,20 @@ export default class NetworkNode
                 let newBlock = this.blockchain.createNewBlock(nonce, prevBlock.hash, newBlockHash, transactions);
                 this.broadcastBlock(newBlock, () => {
 
-                    console.log("I mined a block and broadcasted it, now i have won a reward, awesome !");
-                    rp({
-                        method: "POST",
-                        uri: `${currentNodeUrl}/transaction/broadcast`,
-                        body: {
-                            amount: this.blockchain.miningReward,
-                            sender: "00",
-                            recipient: nodeAddress
-                        },
-                        json: true,
-                        timeout: 1500
-                    }).then(() => { result.json({note: `New block successfully mined && broadcasted`, block: newBlock}); }).catch(() => {});
+                    result.json({note: `New block successfully mined && broadcasted`, block: newBlock}); 
+
+                    // console.log("I mined a block and broadcasted it, now i have won a reward, awesome !");
+                    // rp({
+                    //     method: "POST",
+                    //     uri: `${currentNodeUrl}/transaction/broadcast`,
+                    //     body: {
+                    //         amount: this.blockchain.miningReward,
+                    //         sender: "00",
+                    //         recipient: this.blockchain.currentNodeAddress().public_key
+                    //     },
+                    //     json: true,
+                    //     timeout: 1500
+                    // }).then(() => { result.json({note: `New block successfully mined && broadcasted`, block: newBlock}); }).catch(() => {});
                 });    
             });
         });
@@ -265,15 +299,35 @@ export default class NetworkNode
         // send a transaction to other nodes
         this.app.post('/transaction/broadcast', (request, result) => {
             let body = request.body;
-            if (body && body.amount && body.sender && body.recipient) {
-                let newTransaction = this.blockchain.createNewTransaction(Number(body.amount), body.sender, body.recipient);
-                let valid = this.blockchain.addToPendingTransactions(newTransaction);
-                if (valid) {
-                    this.broadcastTransaction(newTransaction);
-                    result.json({note: `Transaction created and broadcasted`, alive: true, newTransaction});
+            if (body && body.amount && body.recipient && body.sender && body.signature) {
+
+                if (!this.blockchain.validAddress(body.sender)) { // && recipient
+                    return;
+                }
+                var EC = require('elliptic').ec;
+                var ec = new EC('secp256k1');
+
+                let t = {
+                    amount: body.amount,
+                    recipient: body.recipient,
+                    sender: body.sender
+                }
+                let key = ec.keyFromPublic(body.sender, "hex");
+                let raw = Buffer.from(JSON.stringify(t));
+                if (key.verify(raw, body.signature)) { // address authentified
+                    let datas = this.blockchain.getAddressData(body.sender);
+                    
+                    if (datas.balance >= body.amount) {
+                        let newTransaction = this.blockchain.createNewTransaction(Number(body.amount), body.sender, body.recipient);
+                        this.blockchain.addToPendingTransactions(newTransaction);
+                        
+                        result.json({note: `Transaction accepted and broadcasted`, alive: true, newTransaction});
+                        this.broadcastTransaction({base: body, transactionObject: newTransaction});
+                    } else {
+                        result.json({note: `Transaction rejected due to insufficient amount from ${body.sender}, need ${body.amount} and have ${datas.balance.toFixed(6)}`, alive: true, t});
+                    }
                 } else {
-                    let datas = this.blockchain.getAddressData(newTransaction.sender);
-                    result.json({note: `Transaction rejected due to insufficient amount from ${newTransaction.sender}, need ${newTransaction.amount} and have ${datas.balance.toFixed(6)}`, alive: true, newTransaction});
+                    result.json({node: `Invalid transaction... you are not ${body.sender}`});
                 }
             }
         });
@@ -285,8 +339,8 @@ export default class NetworkNode
                     let lastBlock = this.blockchain.getLastBlock();
                     let correctLastHash = lastBlock.hash === block.prevBlockHash;
                     let correctIndex = block.id == this.blockchain.getNewBlockIndex();
-                    
-                    if (correctLastHash && correctIndex) {
+                
+                    if (correctLastHash && correctIndex && this.blockchain.checkNewBlock(block)) {
                         result.json({alive: true, note: "New block accepted", block: block});
                         this.blockchain.addNewBlock(block);
 
@@ -298,8 +352,6 @@ export default class NetworkNode
                                 json: true,
                                 timeout: 1500
                             }).then(() => {}).catch(() => {});
-
-                            console.log(`Something went wrong with my blockchain :(`);
                         }
 
                     } else {
@@ -329,10 +381,10 @@ export default class NetworkNode
                         this.blockchain.chain = newChain.chain;
 
                         result.json({alive: true, note: 'Current chain updated to a new larger one', chain: newChain});
-                    } else {
-                        result.json({alive: true, note: 'Current chain seems to be valid and up to date', chain: this.blockchain.chain});
+                        return;
                     }
-                } else result.json({alive: true, note: 'Current chain seems to be valid and up to date', chain: this.blockchain.chain});
+                }
+                result.json({alive: true, note: 'Current chain seems to be valid and up to date', chain: this.blockchain.chain});
             })
         });
 
@@ -342,13 +394,17 @@ export default class NetworkNode
                 result.json({address:datas});
             }
         });
+
+        this.app.get('/generateAddress', (request, result) => {
+            result.json(this.blockchain.generateNewWallet());
+        });
     }
     
 
     listen() 
     {
         this.app.listen(listenPort, () => {
-            console.log(`Network node (${nodeAddress}) listening on port ${listenPort}...`);
+            console.log(`Network node (${this.blockchain.currentNodeAddress().public_key}) listening on port ${listenPort}...`);
         }).on('error', (e) => { console.log(`An error occured while trying to start the network node ${e}`); });
     }
 }

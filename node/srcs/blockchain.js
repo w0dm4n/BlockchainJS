@@ -3,20 +3,48 @@ import Transaction from "./transaction.js"
 
 const sha256 = require("sha256");
 const uuid = require("uuid/v1");
+const fs = require("fs");
 
 const currentNodeUrl = process.argv[3];
 export default class Blockchain
 {
     constructor()
     {
-        this.hash_need = "000000" // used to increase the difficulty
+        this.hash_need = "0000" // used to increase the difficulty
         this.chain = [];
         this.pendingTransactions = [];
         
         this.miningReward = 0.5;
         this.networkNodes = [];
         this.createNewBlock(0, '0', '0', []);
+
+        //put max amount token on the 00 address that deliver to miners on the first block
         this.addNewNode(currentNodeUrl);
+        this.currentNodeAddress();
+    }
+
+    generateNewWallet()
+    {
+        var EC = require('elliptic').ec;
+        var ec = new EC('secp256k1');
+        
+        var key = ec.genKeyPair();
+        let hexPub = "04" + key.getPublic().x.toString(16) + key.getPublic().y.toString(16);
+        return {private_key: key.getPrivate().toString(16), public_key: hexPub};
+    }
+
+    currentNodeAddress()
+    {
+        try {
+            let contents = fs.readFileSync("node_address.json");
+            return JSON.parse(contents.toString());
+        }
+        catch (e) 
+        {
+            let wallet = this.generateNewWallet();
+            fs.writeFileSync("node_address.json", JSON.stringify(wallet), "utf8");
+            return wallet;
+        }
     }
 
     findPendingTransaction(id)
@@ -39,6 +67,17 @@ export default class Blockchain
                 //console.log(`Transaction ${transaction.id} verified by block ${block.id}`);
             }
         }
+    }
+
+    checkNewBlock(block)
+    {
+        for (var transaction of block.transactions) {
+            let sender = this.getAddressData(transaction.sender);
+            if (sender.balance < transaction.amount) {
+                return false;
+            }
+        }
+        return true;
     }
 
     createNewBlock(nonce, prevBlockHash, hash, transactions) {
@@ -116,13 +155,11 @@ export default class Blockchain
     }
 
     addToPendingTransactions(transaction) {
-        let datas = this.getAddressData(transaction.sender);
+        this.pendingTransactions.push(transaction);
+    }
 
-        if (datas.balance >= transaction.amount) {
-            this.pendingTransactions.push(transaction);
-            return true;
-        }
-        return false
+    validAddress(addr) {
+        return ((addr.length == this.generateNewWallet().public_key.length) == true && (addr.match("^[a-zA-Z0-9]*$")) != null);
     }
 
     createNewTransaction(amount, sender, recipient){
@@ -163,7 +200,7 @@ export default class Blockchain
     }
 
     getAddressData(address) {
-        let results = {received: [], sent: [], balance: 0.00};
+        let results = {received: [], sent: [], balance: 100.00};
 
         for (var block of this.chain) {
             for (var transaction of block.transactions)
