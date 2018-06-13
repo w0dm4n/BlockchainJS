@@ -20,11 +20,11 @@ export default class Blockchain
         this.networkNodes = [];
         this.pendingBlocks = [];
 
-        let genesysBlock = this.createNewBlock(0, '0', '0', []);
-        genesysBlock.minedBy = "000000000000000000000000000";
+        let genesisBlock = this.createNewBlock(0, '0', '0', []);
+        genesisBlock.minedBy = "000000000000000000000000000";
 
-        this.addReward(genesysBlock, this.miningReward, true);
-        this.addNewBlock(genesysBlock);
+        this.addReward(genesisBlock, this.miningReward, true);
+        this.addNewBlock(genesisBlock);
 
         this.addNewNode(currentNodeUrl);
         this.currentNodeAddress();
@@ -89,7 +89,7 @@ export default class Blockchain
     checkNewBlock(block)
     {
         if (block.id == 2 && block.transactions.length == 1 
-            && block.transactions[0].recipient == "000000000000000000000000000") { // first mined block should contain only one transaction (from the genesys)
+            && block.transactions[0].recipient == "000000000000000000000000000") { // first mined block should contain only one transaction (from the genesis)
             return true;
         }
         for (var transaction of block.transactions) {
@@ -251,7 +251,7 @@ export default class Blockchain
         return results;
     }
 
-    addReward(block, reward, genesys)
+    addReward(block, reward, genesis)
     {
         let t = {
             amount: reward,
@@ -262,7 +262,7 @@ export default class Blockchain
     
         let hash = sha256(JSON.stringify(t));
         let newTransaction = this.createNewTransaction(hash, reward, block.minedBy, block.minedBy, "000000000000000000000000000", block.timestamp);
-        if (genesys) {
+        if (genesis) {
             newTransaction.id = 1;
             newTransaction.timestamp = 0;
         }
