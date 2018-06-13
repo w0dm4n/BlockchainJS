@@ -4,8 +4,8 @@ const sha256 = require("sha256");
 var EC = require('elliptic').ec;
 var ec = new EC('secp256k1');
 
-let pub = "04c92b79fef5883a11e16bd2ce3f6626832031decb8fb85193c11947af32dac2974e8ef77b266900bfb6904251cb9f06fe27da473232ef972a3ed0ad80bac27d79";
-let priv = "7911f87905f2165c75b02077caaf7f59e99a0ff14a05b8ee3e401fa6eb6b7373";
+let pub = "047b891e3ac997721c99758be15fda78d47ca797cf3ea775b3b9497f60708dc1f3bb2545afaf5f6073549c49d0b8b883f7a15bdf3f5b8ed15b0d4c7a3042349cfb";
+let priv = "29e1f1615f0263cbad31b404852286c303f89858c45cca87048174ef302ee489";
 
 let node = "http://localhost:3000";
 
@@ -13,7 +13,7 @@ let amount = process.argv[2];
 let recipient = process.argv[3];
 
 let transaction = {
-    amount: amount,
+    amount: Number(amount),
     recipient: recipient,
     sender: pub,
     initiated: Date.now()

@@ -1,6 +1,7 @@
 import Block from "./block.js"
 import Transaction from "./transaction.js"
 import Utils from "./utils.js"
+import { generate } from "randomstring/lib/randomstring";
 
 const sha256 = require("sha256");
 const uuid = require("uuid/v1");
@@ -17,11 +18,18 @@ export default class Blockchain
         
         this.miningReward = 0.5;
         this.networkNodes = [];
-        this.createNewBlock(0, '0', '0', []);
+        this.pendingBlocks = [];
 
-        //put max amount token on the 00 address that deliver to miners on the first block
+        let genesysBlock = this.createNewBlock(0, '0', '0', []);
+        genesysBlock.minedBy = "000000000000000000000000000";
+
+        this.addReward(genesysBlock, this.miningReward, true);
+        this.addNewBlock(genesysBlock);
+
         this.addNewNode(currentNodeUrl);
         this.currentNodeAddress();
+
+        this.rewardEvent();
     }
 
     generateNewWallet()
@@ -48,6 +56,15 @@ export default class Blockchain
         }
     }
 
+    addPendingBlock(block)
+    {
+        let lastBlock = this.getLastBlock();
+        if (block.prevBlockHash != lastBlock.hash || block.id != (lastBlock.id + 1)) {
+            return;
+        }
+        this.pendingBlocks.push(block);
+    }
+
     findPendingTransaction(id)
     {
         let i = 0;
@@ -65,16 +82,20 @@ export default class Blockchain
             let index = this.findPendingTransaction(transaction.id);
             if (index != -1) {
                 this.pendingTransactions.splice(index, 1);
-                //console.log(`Transaction ${transaction.id} verified by block ${block.id}`);
             }
         }
     }
 
     checkNewBlock(block)
     {
+        if (block.id == 2 && block.transactions.length == 1 
+            && block.transactions[0].recipient == "000000000000000000000000000") { // first mined block should contain only one transaction (from the genesys)
+            return true;
+        }
         for (var transaction of block.transactions) {
             let sender = this.getAddressData(transaction.sender);
-            if (sender.balance < transaction.amount) {
+            if (sender.balance < transaction.amount
+                 && transaction.sender != transaction.recipient) {
                 return false;
             }
         }
@@ -88,10 +109,11 @@ export default class Blockchain
                 nonce: nonce,
                 hash: hash,
                 prevBlockHash: prevBlockHash,
-                timestamp: Date.now() }, false);
+                timestamp: Date.now(),
+                minedBy: this.currentNodeAddress().public_key }, false);
         
-        this.clearInBlockTransaction(block);
-        this.chain.push(block);
+        // this.clearInBlockTransaction(block);
+        // this.chain.push(block);
         return block;
     }
 
@@ -138,20 +160,6 @@ export default class Blockchain
         let blockHash = sha256(rawData);
 
         return blockHash;
-    }
-
-    proofOfWork(prevBlockHash, currentBlockData) {
-        let nonce = 0;
-        let hash = this.hashBlock(prevBlockHash, currentBlockData, nonce);
-
-        // find a way to handle the powerness of cpu fucked by the mining process
-        console.log(`Mining a new block... (${this.pendingTransactions.length} pending transactions)`);
-        while (hash.substring(0, this.hash_need.length) !== this.hash_need) {
-            nonce++;
-            hash = this.hashBlock(prevBlockHash, currentBlockData, nonce);
-            // sleep by microsec / cpu tick
-        }
-        return nonce;
     }
 
     addToPendingTransactions(transaction) {
@@ -203,6 +211,9 @@ export default class Blockchain
         for (var block of chain) {
             for (var transaction of block.transactions)
             {
+                if (transaction.signature === "000000000000000000000000000") { // mining reward
+                    continue;
+                }
                 let key = ec.keyFromPublic(transaction.sender, "hex");
                 let signature = Utils.convertHexStringToNumArray(transaction.signature);
                 
@@ -228,13 +239,62 @@ export default class Blockchain
         for (var block of this.chain) {
             for (var transaction of block.transactions)
             {
+                if (transaction.recipient === address && transaction.sender === address) { // from mining
+                    results.balance += transaction.amount;
+                    continue;
+                }
+
                 if (transaction.sender === address) { results.sent.push(transaction); results.balance -= transaction.amount; }
-                if (transaction.recipient === address) { results.recipient.push(transaction); results.balance += transaction.amount; }
+                if (transaction.recipient === address) { results.received.push(transaction); results.balance += transaction.amount; }
             }
         }
-        if (address === "00")  { // base address
-            results.balance = this.miningReward;
-        }
         return results;
+    }
+
+    addReward(block, reward, genesys)
+    {
+        let t = {
+            amount: reward,
+            recipient: block.minedBy,
+            sender: block.minedBy,
+            initiated: block.timestamp 
+        }
+    
+        let hash = sha256(JSON.stringify(t));
+        let newTransaction = this.createNewTransaction(hash, reward, block.minedBy, block.minedBy, "000000000000000000000000000", block.timestamp);
+        if (genesys) {
+            newTransaction.id = 1;
+            newTransaction.timestamp = 0;
+        }
+        this.addToPendingTransactions(newTransaction);
+    }
+
+    rewardEvent() {
+        setInterval(() => {
+            if (this.pendingBlocks.length > 0) {
+                let lastBlock = this.getLastBlock();
+                let winnerBlockIndex = (lastBlock.nonce - this.getNewBlockIndex()) % this.pendingBlocks.length;
+                if (winnerBlockIndex < 0) {
+                    winnerBlockIndex = -winnerBlockIndex;
+                }
+                
+                let winnerBlock = this.pendingBlocks[winnerBlockIndex];
+                console.log(`${winnerBlock.minedBy} won the blocks fight ! Congratulations for the reward of ${this.miningReward}`);
+                this.addNewBlock(winnerBlock);
+                this.pendingBlocks = [];
+
+                this.addReward(winnerBlock, this.miningReward, false);
+
+                if (!this.isValidChain(this.chain)) {
+                        rp({
+                            method: "POST",
+                            uri: `${currentNodeUrl}/consensus`,
+                            body: { nodes: this.blockchain.networkNodes },
+                            json: true,
+                            timeout: 1500
+                        }).then(() => {}).catch(() => {});
+                }
+            }
+        }, Utils.getMilliSecondsByMinutes(2));
     }
 };

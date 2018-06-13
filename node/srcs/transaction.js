@@ -3,7 +3,7 @@ export default class Transaction
     constructor(raw, debug) // id, amount, sender, recipient
     {
         this.id = raw.id;
-        this.amount = raw.amount;
+        this.amount = Number(raw.amount);
         this.sender = raw.sender;
         this.recipient = raw.recipient;
         this.signature = raw.signature;

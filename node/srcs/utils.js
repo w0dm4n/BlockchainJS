@@ -20,5 +20,9 @@ export default class Utils {
         }
         return (result);
     }
+
+    static getMilliSecondsByMinutes(min) {
+        return ((min * 60) * 1000);
+    }
         
 };

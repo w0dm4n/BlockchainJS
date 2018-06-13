@@ -12,6 +12,7 @@ const random_string = require("randomstring");
 const eccrypto = require("eccrypto");
 const fs = require("fs");
 const sha256 = require("sha256");
+const EC = require('elliptic').ec;
 
 const listenPort = process.argv[2];
 const currentNodeUrl = process.argv[3];
@@ -171,12 +172,11 @@ export default class NetworkNode
             let object = request.body.transactionObject;
             if (body && body.amount && body.recipient && body.sender && body.signature && object) {
 
-                if (!this.blockchain.validAddress(body.sender)) { // && recipient
+                if (!this.blockchain.validAddress(body.sender) || !this.blockchain.validAddress(body.recipient)) {
+                    result.json({note: "Invalid recipient or sender address"});
                     return;
                 }
-                var EC = require('elliptic').ec;
                 var ec = new EC('secp256k1');
-
 
                 if (body.amount != object.amount || body.recipient !== object.recipient && body.sender !== object.sender) {
                     return;
@@ -217,7 +217,8 @@ export default class NetworkNode
             }
 
             if (transactions.length == 0) {
-                result.json({note: `No transaction to mine !`}); 
+                result.json({note: `No transaction to mine !`});
+                return;
             }
 
             let powResult = '';
@@ -229,7 +230,6 @@ export default class NetworkNode
             child.on('exit',  (code, signal) => {
                 let nonce = Number(powResult);
                 let newBlockHash = this.blockchain.hashBlock(prevBlock.hash, datas, nonce);
-
                 let lastBlock = this.blockchain.getLastBlock();
 
                 if (prevBlock.hash != lastBlock.hash) {
@@ -237,23 +237,11 @@ export default class NetworkNode
                     return;
                 }
                 let newBlock = this.blockchain.createNewBlock(nonce, prevBlock.hash, newBlockHash, transactions);
+                this.blockchain.addPendingBlock(newBlock);
+
                 this.broadcastBlock(newBlock, () => {
-
-                    result.json({note: `New block successfully mined && broadcasted`, block: newBlock}); 
-
-                    // console.log("I mined a block and broadcasted it, now i have won a reward, awesome !");
-                    // rp({
-                    //     method: "POST",
-                    //     uri: `${currentNodeUrl}/transaction/broadcast`,
-                    //     body: {
-                    //         amount: this.blockchain.miningReward,
-                    //         sender: "00",
-                    //         recipient: this.blockchain.currentNodeAddress().public_key
-                    //     },
-                    //     json: true,
-                    //     timeout: 1500
-                    // }).then(() => { result.json({note: `New block successfully mined && broadcasted`, block: newBlock}); }).catch(() => {});
-                });    
+                    result.json({note: `One block mined and broadcasted to other nodes`, block: newBlock});
+                });
             });
         });
 
@@ -295,6 +283,7 @@ export default class NetworkNode
                 result.json({alive: true});
                 for (var node of request.body.nodes) {
                     this.blockchain.addNewNode(node);
+
                 }
             }
         });
@@ -304,7 +293,8 @@ export default class NetworkNode
             let body = request.body;
             if (body && body.amount && body.recipient && body.sender && body.signature && body.initiated) {
 
-                if (!this.blockchain.validAddress(body.sender)) { // && recipient
+                if (!this.blockchain.validAddress(body.sender) || !this.blockchain.validAddress(body.recipient)) {
+                    result.json({note: "Invalid recipient or sender address"});
                     return;
                 }
                 var EC = require('elliptic').ec;
@@ -345,20 +335,16 @@ export default class NetworkNode
                     let correctIndex = block.id == this.blockchain.getNewBlockIndex();
                 
                     if (correctLastHash && correctIndex && this.blockchain.checkNewBlock(block)) {
-                        result.json({alive: true, note: "New block accepted", block: block});
-                        this.blockchain.addNewBlock(block);
-
-                        if (!this.blockchain.isValidChain(this.blockchain.chain)) {
-                            rp({
-                                method: "POST",
-                                uri: `${currentNodeUrl}/consensus`,
-                                body: { nodes: this.blockchain.networkNodes },
-                                json: true,
-                                timeout: 1500
-                            }).then(() => {}).catch(() => {});
+                        
+                        if (this.blockchain.isValidChain([...this.blockchain.chain, block])) {
+                            result.json({alive: true, note: "New block added to the possible winners list", block: block});
+                            this.blockchain.addPendingBlock(block);
+                        } else {
+                            result.json({alive: true, note: "New block invalid", block: block});
                         }
-
                     } else {
+                        console.log(`${lastBlock.hash} VS ${block.prevBlockHash}`);
+                        console.log(correctLastHash, correctIndex, this.blockchain.checkNewBlock(block));
                         result.json({alive: true, note: "New block refused", block: block});
                     }
                 } else {
@@ -379,8 +365,7 @@ export default class NetworkNode
                         }
                     }
 
-                    if (newChain && this.blockchain.isValidChain(newChain.chain)) {
-                        // if chain not sync all 'legit' transactions sent to it are lost ?
+                    if (newChain && this.blockchain.isValidChain(newChain.chain)) { 
                         this.blockchain.pendingTransactions = newChain.pendingTransactions;
                         this.blockchain.chain = newChain.chain;
 

@@ -7,6 +7,8 @@ export default class Block
         this.nonce = raw.nonce; // Number that proof the creation of a new block by using pow
         this.hash = raw.hash; // hash strings that contains transactions
         this.prevBlockHash = raw.prevBlockHash;
+        
+        this.minedBy = raw.minedBy;
 
         this.timestamp = raw.timestamp; // Date block created
         if (debug) {
