@@ -44,41 +44,41 @@ export default class NetworkNode
         this.setRoutes();
     }
 
-    broadcastNewNode(newNode, callback)
-    {
-        let promises = [];
-        let i = 0;
-        let nodesCount = this.blockchain.networkNodes.length;
-        for (var node of this.blockchain.networkNodes) {
+    // broadcastNewNode(newNode, callback)
+    // {
+    //     let promises = [];
+    //     let i = 0;
+    //     let nodesCount = this.blockchain.networkNodes.length;
+    //     for (var node of this.blockchain.networkNodes) {
             
-            ((currentNode) => {
-                rp({
-                    method: "POST",
-                    uri: `${node}/register-node`,
-                    body: { newNodeUrl: newNode },
-                    json: true,
-                    timeout: 1500
-                }).then((answer) => {
-                    i++;
+    //         ((currentNode) => {
+    //             rp({
+    //                 method: "POST",
+    //                 uri: `${node}/register-node`,
+    //                 body: { newNodeUrl: newNode },
+    //                 json: true,
+    //                 timeout: 1500
+    //             }).then((answer) => {
+    //                 i++;
                     
-                    if (currentNode != currentNodeUrl) {
-                        if (!answer.alive) { // || check node address validity ?
-                            this.blockchain.removeNode(newNode);
-                        }
-                    }
+    //                 if (currentNode != currentNodeUrl) {
+    //                     if (!answer.alive) { // || check node address validity ?
+    //                         this.blockchain.removeNode(newNode);
+    //                     }
+    //                 }
                     
-                    if (i == nodesCount)
-                        callback();
-                }).catch((error) => {
-                    i++;
-                    this.blockchain.removeNode(node);
-                    if (i == nodesCount)
-                        callback();
-                });
+    //                 if (i == nodesCount)
+    //                     callback();
+    //             }).catch((error) => {
+    //                 i++;
+    //                 this.blockchain.removeNode(node);
+    //                 if (i == nodesCount)
+    //                     callback();
+    //             });
                 
-            })(node);
-        }
-    }
+    //         })(node);
+    //     }
+    // }
 
     broadcastTransaction(transaction) 
     {
@@ -245,48 +245,48 @@ export default class NetworkNode
             });
         });
 
-        // register one new node and send it to other nodes already known
-        this.app.post('/register-and-broadcast-node', (request, result) => {
-           if (request.body.newNodeUrl) {
-               let newNodeUrl = request.body.newNodeUrl;
-               result.json({alive: true});
+        // // register one new node and send it to other nodes already known
+        // this.app.post('/register-and-broadcast-node', (request, result) => {
+        //    if (request.body.newNodeUrl) {
+        //        let newNodeUrl = request.body.newNodeUrl;
+        //        result.json({alive: true});
 
-                /*
-                ** check if node url is valid by a ping pong request ?
-                ** can be fake spoof nodes to ddos or down the blockchain
-                */
-                this.blockchain.addNewNode(newNodeUrl);
-                this.broadcastNewNode(newNodeUrl, () => {
-                    rp({
-                        method: "POST",
-                        uri: `${newNodeUrl}/register-nodes-bulk`,
-                        body: { nodes: this.blockchain.networkNodes },
-                        json: true,
-                        timeout: 1500
-                    }).then(() => {}).catch(() => {});
-                });
-           } 
-        });
+        //         /*
+        //         ** check if node url is valid by a ping pong request ?
+        //         ** can be fake spoof nodes to ddos or down the blockchain
+        //         */
+        //         this.blockchain.addNewNode(newNodeUrl);
+        //         this.broadcastNewNode(newNodeUrl, () => {
+        //             rp({
+        //                 method: "POST",
+        //                 uri: `${newNodeUrl}/register-nodes-bulk`,
+        //                 body: { nodes: this.blockchain.networkNodes },
+        //                 json: true,
+        //                 timeout: 1500
+        //             }).then(() => {}).catch(() => {});
+        //         });
+        //    } 
+        // });
 
-        // only register
-        this.app.post('/register-node', (request, result) => {
-            if (request.body.newNodeUrl) {
-                result.json({alive: true});
-                this.blockchain.addNewNode(request.body.newNodeUrl);
-                // add check node
-            }
-        });
+        // // only register
+        // this.app.post('/register-node', (request, result) => {
+        //     if (request.body.newNodeUrl) {
+        //         result.json({alive: true});
+        //         this.blockchain.addNewNode(request.body.newNodeUrl);
+        //         // add check node
+        //     }
+        // });
 
-        // register multiples nodes at once
-        this.app.post('/register-nodes-bulk', (request, result) => {
-            if (request.body.nodes) {
-                result.json({alive: true});
-                for (var node of request.body.nodes) {
-                    this.blockchain.addNewNode(node);
+        // // register multiples nodes at once
+        // this.app.post('/register-nodes-bulk', (request, result) => {
+        //     if (request.body.nodes) {
+        //         result.json({alive: true});
+        //         for (var node of request.body.nodes) {
+        //             this.blockchain.addNewNode(node);
 
-                }
-            }
-        });
+        //         }
+        //     }
+        // });
 
         // send a transaction to other nodes
         this.app.post('/transaction/broadcast', (request, result) => {
@@ -343,8 +343,6 @@ export default class NetworkNode
                             result.json({alive: true, note: "New block invalid", block: block});
                         }
                     } else {
-                        console.log(`${lastBlock.hash} VS ${block.prevBlockHash}`);
-                        console.log(correctLastHash, correctIndex, this.blockchain.checkNewBlock(block));
                         result.json({alive: true, note: "New block refused", block: block});
                     }
                 } else {
@@ -369,6 +367,7 @@ export default class NetworkNode
                         this.blockchain.pendingTransactions = newChain.pendingTransactions;
                         this.blockchain.chain = newChain.chain;
 
+                        this.blockchain.dumpChain();
                         result.json({alive: true, note: 'Current chain updated to a new larger one', chain: newChain});
                         return;
                     }
@@ -387,8 +386,17 @@ export default class NetworkNode
         this.app.get('/generateAddress', (request, result) => {
             result.json(this.blockchain.generateNewWallet());
         });
+
+        this.app.post('/ping', (request, result) => {
+            if (request.body.nodes) {
+                for (var node of request.body.nodes) {
+                    this.blockchain.getFromNodeAndConnect(node.url);
+                }
+            }
+
+            result.json({alive: true, nodes: this.blockchain.networkNodes, indexers: this.blockchain.nodesIndexers});
+        });
     }
-    
 
     listen() 
     {

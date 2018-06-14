@@ -6,6 +6,7 @@ import { generate } from "randomstring/lib/randomstring";
 const sha256 = require("sha256");
 const uuid = require("uuid/v1");
 const fs = require("fs");
+const rp = require("request-promise");
 
 const currentNodeUrl = process.argv[3];
 export default class Blockchain
@@ -20,16 +21,81 @@ export default class Blockchain
         this.networkNodes = [];
         this.pendingBlocks = [];
 
-        let genesisBlock = this.createNewBlock(0, '0', '0', []);
-        genesisBlock.minedBy = "000000000000000000000000000";
+        this.nodesIndexers = ["http://localhost:3333"];
 
-        this.addReward(genesisBlock, this.miningReward, true);
-        this.addNewBlock(genesisBlock);
+        if (!this.loadChain()) {
+            let genesisBlock = this.createNewBlock(0, '0', '0', []);
+            genesisBlock.minedBy = "000000000000000000000000000";
+
+            this.addReward(genesisBlock, this.miningReward, true);
+            this.addNewBlock(genesisBlock);
+        }
 
         this.addNewNode(currentNodeUrl);
         this.currentNodeAddress();
-
         this.rewardEvent();
+
+        // routine check dead nodes
+
+        for (var indexer of this.nodesIndexers) {
+            this.syncIndexer(indexer, false);
+        }
+    }
+
+    syncIndexer(indexer, pushIt)
+    {
+        console.log(`Connecting to indexer ${indexer}`);
+        rp({
+            method: "POST",
+            uri: `${indexer}/connect`,
+            body: {nodeUrl: currentNodeUrl},
+            json: true,
+            timeout: 1500
+        }).then((answer) => {
+            if (pushIt) {
+                this.nodesIndexers.push(indexer);
+            }
+
+            if (!answer || !answer.nodes)
+                return;
+
+            
+            for (var node of answer.nodes) {
+                this.getFromNodeAndConnect(node.url);
+            }
+        }).catch(() => {
+            this.removeIndexer(indexer);
+        });
+    }
+
+    getFromNodeAndConnect(nodeUrl)
+    {
+        if (this.networkNodes.indexOf(nodeUrl) == -1) {
+            rp({
+                method: "POST",
+                uri: `${nodeUrl}/ping`,
+                body: {nodes: this.networkNodes},
+                json: true,
+                timeout: 1500
+            }).then((answer) => {
+                if (answer && answer.alive && answer.nodes && answer.indexers) {
+                    console.log(`New node ${nodeUrl} added !`);
+                    this.addNewNode(nodeUrl);
+
+                    for (var node of answer.nodes) {
+                        if (this.networkNodes.indexOf(node) == -1) {
+                            getFromNodeAndConnect(node);
+                        }
+                    }
+
+                    for (var indexer of answer.indexers) {
+                        if (this.nodesIndexers.indexOf(indexer) == -1) {
+                            syncIndexer(indexer, true);
+                        } 
+                    }
+                }
+            }).catch(() => {});
+        }
     }
 
     generateNewWallet()
@@ -63,6 +129,8 @@ export default class Blockchain
             return;
         }
         this.pendingBlocks.push(block);
+
+        this.dumpChain();
     }
 
     findPendingTransaction(id)
@@ -112,8 +180,6 @@ export default class Blockchain
                 timestamp: Date.now(),
                 minedBy: this.currentNodeAddress().public_key }, false);
         
-        // this.clearInBlockTransaction(block);
-        // this.chain.push(block);
         return block;
     }
 
@@ -122,12 +188,16 @@ export default class Blockchain
 
         this.clearInBlockTransaction(block);
         this.chain.push(block);
+
+        this.dumpChain();
         return block;
     }
 
     addNewNode(nodeUrl) {
         if (this.networkNodes.indexOf(nodeUrl) == -1) {
             this.networkNodes.push(nodeUrl);
+            
+            this.dumpChain();
         }
     }
 
@@ -139,6 +209,13 @@ export default class Blockchain
         let index = this.networkNodes.indexOf(nodeUrl);
         if (index) {
             this.networkNodes.splice(index, 1);
+        }
+    }
+
+    removeIndexer(indexer) {
+        let index = this.nodesIndexers.indexOf(indexer);
+        if (index) {
+            this.nodesIndexers.splice(index, 1);
         }
     }
 
@@ -164,6 +241,7 @@ export default class Blockchain
 
     addToPendingTransactions(transaction) {
         this.pendingTransactions.push(transaction);
+        this.dumpChain();
     }
 
     validAddress(addr) {
@@ -295,6 +373,26 @@ export default class Blockchain
                         }).then(() => {}).catch(() => {});
                 }
             }
-        }, Utils.getMilliSecondsByMinutes(2));
+        }, Utils.getMilliSecondsByMinutes(0.1));
+    }
+
+    dumpChain() {
+        fs.writeFileSync("chain.json", JSON.stringify({pending: this.pendingTransactions, chain: this.chain, nodesIndexers: this.nodesIndexers, nodes: this.networkNodes}), "utf8");
+    }
+
+    loadChain() {
+        try {
+            let chainContents = fs.readFileSync("chain.json");
+            if (chainContents) {
+                let datas = JSON.parse(chainContents.toString());
+                this.chain = datas.chain;
+                this.pendingTransactions = datas.pending;
+                this.nodesIndexers = datas.nodesIndexers;
+                this.networkNodes = datas.nodes;
+            }
+            return true;
+        } catch (e) { 
+            return false;
+        }
     }
 };
