@@ -363,7 +363,8 @@ export default class NetworkNode
                         }
                     }
 
-                    if (newChain && this.blockchain.isValidChain(newChain.chain)) { 
+                    if (newChain && this.blockchain.isValidChain(newChain.chain)) {
+                        this.blockchain.pendingBlocks = newChain.pendingBlocks;
                         this.blockchain.pendingTransactions = newChain.pendingTransactions;
                         this.blockchain.chain = newChain.chain;
 

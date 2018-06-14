@@ -35,7 +35,7 @@ export default class Blockchain
         this.currentNodeAddress();
         this.rewardEvent();
 
-        // routine check dead nodes
+        this.nodesWatcher();
 
         for (var indexer of this.nodesIndexers) {
             this.syncIndexer(indexer, false);
@@ -58,7 +58,6 @@ export default class Blockchain
 
             if (!answer || !answer.nodes)
                 return;
-
             
             for (var node of answer.nodes) {
                 this.getFromNodeAndConnect(node.url);
@@ -79,7 +78,6 @@ export default class Blockchain
                 timeout: 1500
             }).then((answer) => {
                 if (answer && answer.alive && answer.nodes && answer.indexers) {
-                    console.log(`New node ${nodeUrl} added !`);
                     this.addNewNode(nodeUrl);
 
                     for (var node of answer.nodes) {
@@ -96,6 +94,54 @@ export default class Blockchain
                 }
             }).catch(() => {});
         }
+    }
+
+    nodesWatcher()
+    {
+        setInterval(() => {
+            
+            let i = 0;
+            let nodesCount = this.networkNodes.length;
+
+            for (var node of this.networkNodes) {
+                ((currentNode) => {
+                    rp({
+                        method: "POST",
+                        uri: `${currentNode}/ping`,
+                        body: {nodes: this.networkNodes},
+                        json: true,
+                        timeout: 1500
+                    }).then((answer) => {
+                        i++;
+                        if (answer && answer.alive && answer.nodes && answer.indexers) {
+                            for (var node of answer.nodes) {
+                                if (this.networkNodes.indexOf(node) == -1) {
+                                    getFromNodeAndConnect(node);
+                                }
+                            }
+        
+                            for (var indexer of answer.indexers) {
+                                if (this.nodesIndexers.indexOf(indexer) == -1) {
+                                    syncIndexer(indexer, true);
+                                } 
+                            }
+                        } else {
+                            this.removeNode(currentNode);
+                        }
+                        if (i == nodesCount) {
+                            this.doConsensus();
+                        }
+                    }).catch(() => {
+                        i++;
+                        this.removeNode(currentNode);
+
+                        if (i == nodesCount) {
+                            this.doConsensus();
+                        }
+                    });
+                })(node);
+            }
+        }, 5000);
     }
 
     generateNewWallet()
@@ -152,6 +198,17 @@ export default class Blockchain
                 this.pendingTransactions.splice(index, 1);
             }
         }
+    }
+
+    doConsensus()
+    {
+        rp({
+            method: "GET",
+            uri: `${currentNodeUrl}/consensus`,
+            body: {},
+            json: true,
+            timeout: 1500
+        }).then(() => {}).catch(() => {});
     }
 
     checkNewBlock(block)
@@ -245,7 +302,8 @@ export default class Blockchain
     }
 
     validAddress(addr) {
-        return ((addr.length == this.generateNewWallet().public_key.length) == true && (addr.match("^[a-zA-Z0-9]*$")) != null);
+        //(addr.length == this.generateNewWallet().public_key.length) == true && (
+        return (addr.match("^[a-zA-Z0-9]*$") != null);
     }
 
     createNewTransaction(hash, amount, sender, recipient, signature, initiated){
@@ -373,7 +431,7 @@ export default class Blockchain
                         }).then(() => {}).catch(() => {});
                 }
             }
-        }, Utils.getMilliSecondsByMinutes(0.1));
+        }, Utils.getMilliSecondsByMinutes(2));
     }
 
     dumpChain() {
